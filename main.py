@@ -108,14 +108,14 @@ def main():
                 trend_analyzer.display_persistent_markets(
                     min_spread=0.02,  # 2% minimum spread
                     persistence_threshold=0.5,  # Must appear in 50% of hours
-                    min_avg_volume=1000,  # Minimum 1000 Chaos equivalent volume
+                    min_avg_volume=1000,  # Minimum 1000 base currency equivalent volume
                     top_n=10
                 )
 
                 # Display trending markets (widening spreads)
                 trend_analyzer.display_trending_markets(
                     lookback_hours=min(6, len(hourly_data_list)),
-                    min_avg_volume=1000,  # Minimum 1000 Chaos equivalent volume
+                    min_avg_volume=1000,  # Minimum 1000 base currency equivalent volume
                     top_n=10
                 )
 

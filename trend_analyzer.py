@@ -26,6 +26,7 @@ class TrendAnalyzer:
         self.league = league
         self.realm = realm
         self.base_currency = 'exalted' if realm == 'poe2' else 'chaos'
+        self.base_currency_display = self.base_currency.capitalize()  # For UI consistency
         self.hourly_data = hourly_data_list
         self.hours_analyzed = len(hourly_data_list)
 
@@ -35,11 +36,13 @@ class TrendAnalyzer:
             for data in hourly_data_list
         ]
 
-        # Track patterns across hours
-        self.spread_history = defaultdict(list)
+        # Track patterns across hours in a unified structure
+        self.market_history = defaultdict(lambda: {
+            'spreads': [],
+            'base_volumes': [],
+            'divine_volumes': []
+        })
         self.triangular_history = defaultdict(list)
-        self.volume_history = defaultdict(list)  # Base currency (Chaos/Exalted) volumes
-        self.divine_volume_history = defaultdict(list)  # Divine volumes
 
         self._analyze_trends()
         self._calculate_divine_base_ratio()
@@ -90,7 +93,8 @@ class TrendAnalyzer:
                         spread_width = (prices['max_price'] / prices['min_price']) - 1
                         market_id = f"{market_pair[0]}|{market_pair[1]}"
 
-                        self.spread_history[market_id].append({
+                        # Track spread data
+                        self.market_history[market_id]['spreads'].append({
                             'hour_index': hour_idx,
                             'spread': spread_width,
                             'min_price': prices['min_price'],
@@ -101,8 +105,8 @@ class TrendAnalyzer:
                         # Track volumes for both currencies
                         base_volume = prices.get('volume', {}).get(self.base_currency, 0)
                         divine_volume = prices.get('volume', {}).get('divine', 0)
-                        self.volume_history[market_id].append(base_volume)
-                        self.divine_volume_history[market_id].append(divine_volume)
+                        self.market_history[market_id]['base_volumes'].append(base_volume)
+                        self.market_history[market_id]['divine_volumes'].append(divine_volume)
 
     def get_persistent_spread_markets(self, min_spread=0.02, persistence_threshold=0.5, min_avg_volume=0, top_n=10):
         """
@@ -120,7 +124,8 @@ class TrendAnalyzer:
         """
         persistent_markets = []
 
-        for market_id, spread_data in self.spread_history.items():
+        for market_id, history in self.market_history.items():
+            spread_data = history['spreads']
             if len(spread_data) < 2:  # Need at least 2 hours of data
                 continue
 
@@ -130,8 +135,8 @@ class TrendAnalyzer:
 
             if persistence_ratio >= persistence_threshold:
                 spreads = [d['spread'] for d in spread_data]
-                base_volumes = self.volume_history.get(market_id, [0])
-                divine_volumes = self.divine_volume_history.get(market_id, [0])
+                base_volumes = history['base_volumes']
+                divine_volumes = history['divine_volumes']
 
                 # Calculate average volumes for both currencies
                 non_zero_base = [v for v in base_volumes if v > 0]
@@ -203,14 +208,15 @@ class TrendAnalyzer:
         """
         trending_markets = []
 
-        for market_id, spread_data in self.spread_history.items():
+        for market_id, history in self.market_history.items():
+            spread_data = history['spreads']
             if len(spread_data) < lookback_hours:
                 continue
 
             # Get recent spreads and volumes
             recent_spreads = [d['spread'] for d in spread_data[-lookback_hours:]]
-            recent_base_volumes = self.volume_history.get(market_id, [])[-lookback_hours:]
-            recent_divine_volumes = self.divine_volume_history.get(market_id, [])[-lookback_hours:]
+            recent_base_volumes = history['base_volumes'][-lookback_hours:]
+            recent_divine_volumes = history['divine_volumes'][-lookback_hours:]
 
             if len(recent_spreads) < 2:
                 continue
@@ -271,13 +277,14 @@ class TrendAnalyzer:
         Returns:
             Dictionary with comprehensive market statistics
         """
-        if market_id not in self.spread_history:
+        if market_id not in self.market_history:
             return None
 
-        spread_data = self.spread_history[market_id]
+        history = self.market_history[market_id]
+        spread_data = history['spreads']
         spreads = [d['spread'] for d in spread_data]
-        base_volumes = self.volume_history.get(market_id, [])
-        divine_volumes = self.divine_volume_history.get(market_id, [])
+        base_volumes = history['base_volumes']
+        divine_volumes = history['divine_volumes']
 
         return {
             'market_id': market_id,

@@ -2,6 +2,12 @@ import itertools
 import statistics
 from bisect import bisect_left
 
+# Configuration constants
+MIN_SPREAD_THRESHOLD = 0.001  # Minimum spread to avoid floating point noise
+TRIANGULAR_BASE_INVESTMENT = 100  # Base amount for triangular inefficiency calculations
+DEFAULT_DIVINE_CHAOS_RATIO = 250  # Fallback Divine to Chaos ratio for PoE1
+DEFAULT_DIVINE_EXALTED_RATIO = 30  # Fallback Divine to Exalted ratio for PoE2
+
 class MarketAnalyzer:
     def _format_number(self, num, precision=8, use_comma=False):
         """Formats a number to a string, removing trailing zeros, with specified precision."""
@@ -13,11 +19,13 @@ class MarketAnalyzer:
         
         return formatted_num
 
-    def __init__(self, market_data, league, realm=None):
+    def __init__(self, market_data, league, realm=None, debug=False):
         self.league = league
         self.realm = realm
+        self.debug = debug
         # Determine base currency: PoE2 uses exalted, PoE1 uses chaos
         self.base_currency = 'exalted' if realm == 'poe2' else 'chaos'
+        self.base_currency_display = self.base_currency.capitalize()  # For UI consistency
         self.markets = self._process_markets(market_data)
         self._calculate_divine_base_ratio()
         self._perform_initial_calculations()
@@ -40,10 +48,50 @@ class MarketAnalyzer:
                   f"{self.divine_to_base_ratio:.0f} {base_name}")
         else:
             # Fallback: typical Divine ratios
-            self.divine_to_base_ratio = 250 if self.base_currency == 'chaos' else 30
+            self.divine_to_base_ratio = DEFAULT_DIVINE_CHAOS_RATIO if self.base_currency == 'chaos' else DEFAULT_DIVINE_EXALTED_RATIO
             base_name = self.base_currency.title()
             print(f"Using Divine to {base_name} ratio (fallback): 1 Divine ≈ "
                   f"{self.divine_to_base_ratio:.0f} {base_name}")
+
+    def _get_volume_percentile(self, volume, volume_list):
+        """
+        Calculate the percentile rank of a volume within a sorted volume list.
+
+        Args:
+            volume: The volume value to rank
+            volume_list: Sorted list of volume values
+
+        Returns:
+            Percentile rank (0-100), or 0 if volume is zero or list is empty
+        """
+        if not volume_list or volume <= 0:
+            return 0
+        rank = bisect_left(volume_list, volume)
+        return (rank / len(volume_list)) * 100
+
+    def _calculate_currency_stats(self, market_data_list, volume_key):
+        """
+        Helper method to calculate statistics for a given currency type.
+
+        Args:
+            market_data_list: List of market data dictionaries
+            volume_key: Key to access volume (e.g., 'base_volume' or 'divine_volume')
+
+        Returns:
+            Dictionary with mean, median, and top markets, or None if no data
+        """
+        markets_with_volume = [m for m in market_data_list if m[volume_key] > 0]
+        if not markets_with_volume:
+            return None
+
+        markets_with_volume.sort(key=lambda x: x[volume_key], reverse=True)
+        volumes = [m[volume_key] for m in markets_with_volume]
+
+        return {
+            'mean': statistics.mean(volumes) if volumes else 0,
+            'median': statistics.median(volumes) if volumes else 0,
+            'top_markets': markets_with_volume
+        }
 
     def _perform_initial_calculations(self):
         market_data_list = []
@@ -80,36 +128,9 @@ class MarketAnalyzer:
         self.market_base_volumes.sort()
         self.market_divine_volumes.sort()
 
-        # Now calculate stats and store them
-        self.base_stats = None
-        base_markets = [m for m in market_data_list if m['base_volume'] > 0]
-        if base_markets:
-            base_markets.sort(key=lambda x: x['base_volume'], reverse=True)
-            base_volumes = [m['base_volume'] for m in base_markets]
-
-            mean_base = statistics.mean(base_volumes) if base_volumes else 0
-            median_base = statistics.median(base_volumes) if base_volumes else 0
-
-            self.base_stats = {
-                'mean': mean_base,
-                'median': median_base,
-                'top_markets': base_markets
-            }
-
-        self.divine_stats = None
-        divine_markets = [m for m in market_data_list if m['divine_volume'] > 0]
-        if divine_markets:
-            divine_markets.sort(key=lambda x: x['divine_volume'], reverse=True)
-            divine_volumes = [m['divine_volume'] for m in divine_markets]
-
-            mean_divine = statistics.mean(divine_volumes) if divine_volumes else 0
-            median_divine = statistics.median(divine_volumes) if divine_volumes else 0
-
-            self.divine_stats = {
-                'mean': mean_divine,
-                'median': median_divine,
-                'top_markets': divine_markets
-            }
+        # Calculate stats using helper method
+        self.base_stats = self._calculate_currency_stats(market_data_list, 'base_volume')
+        self.divine_stats = self._calculate_currency_stats(market_data_list, 'divine_volume')
 
     def _process_markets(self, market_data):
         """
@@ -117,25 +138,37 @@ class MarketAnalyzer:
         It extracts buy and sell prices for each currency pair.
         """
         processed_markets = {}
+        skipped_counts = {'wrong_league': 0, 'invalid_id': 0, 'missing_ratios': 0, 'zero_ratio': 0}
+
         for market in market_data.get('markets', []):
             if market.get('league') != self.league:
+                skipped_counts['wrong_league'] += 1
                 continue
 
             market_id = market.get('market_id')
             if not market_id or '|' not in market_id:
+                if self.debug:
+                    print(f"Skipping invalid market_id: {market_id}")
+                skipped_counts['invalid_id'] += 1
                 continue
 
             currency_a, currency_b = market_id.split('|')
-            
+
             # Ensure we have data for both currencies in the ratios
             if currency_a not in market.get('lowest_ratio', {}) or \
                currency_b not in market.get('lowest_ratio', {}) or \
                currency_a not in market.get('highest_ratio', {}) or \
                currency_b not in market.get('highest_ratio', {}):
+                if self.debug:
+                    print(f"Skipping {market_id}: missing ratio data")
+                skipped_counts['missing_ratios'] += 1
                 continue
 
             # Avoid division by zero
             if market['lowest_ratio'][currency_a] == 0 or market['highest_ratio'][currency_a] == 0:
+                if self.debug:
+                    print(f"Skipping {market_id}: zero ratio value")
+                skipped_counts['zero_ratio'] += 1
                 continue
 
             # lowest_ratio: The lowest exchange rate at which trades executed during this hour
@@ -160,6 +193,14 @@ class MarketAnalyzer:
             processed_markets[currency_a][currency_b] = {'max_price': max_historical_price_for_a, 'min_price': min_historical_price_for_a, 'volume': volume_traded}
             # Store the inverse perspective for triangular path analysis
             processed_markets[currency_b][currency_a] = {'max_price': 1 / min_historical_price_for_a, 'min_price': 1 / max_historical_price_for_a, 'volume': volume_traded}
+
+        if self.debug:
+            print(f"\nMarket Processing Summary:")
+            print(f"  Total markets processed: {len(processed_markets)}")
+            print(f"  Skipped - wrong league: {skipped_counts['wrong_league']}")
+            print(f"  Skipped - invalid ID: {skipped_counts['invalid_id']}")
+            print(f"  Skipped - missing ratios: {skipped_counts['missing_ratios']}")
+            print(f"  Skipped - zero ratios: {skipped_counts['zero_ratio']}")
 
         return processed_markets
 
@@ -190,21 +231,21 @@ class MarketAnalyzer:
                 # Spread = how much higher the max was compared to the min
                 if prices['min_price'] > 0: # Avoid division by zero
                     spread_width = (prices['max_price'] / prices['min_price']) - 1
-                    if spread_width > 0.001:  # Using a small threshold to avoid floating point noise
+                    if spread_width > MIN_SPREAD_THRESHOLD:
                         market_pair = f"{currency_a} <-> {currency_b}"
 
                         # Calculate potential value in base currency if this spread persists
                         base_value_str = ""
                         try:
-                            # Estimate value based on 100 units traded at this spread width
+                            # Estimate value based on TRIANGULAR_BASE_INVESTMENT units traded at this spread width
                             if currency_b == self.base_currency:
-                                potential_value = 100 * spread_width
-                                base_value_str = f" (Historical spread: {potential_value:.2f} {self.base_currency.capitalize()} on 100 {self.base_currency.capitalize()} volume)"
+                                potential_value = TRIANGULAR_BASE_INVESTMENT * spread_width
+                                base_value_str = f" (Historical spread: {potential_value:.2f} {self.base_currency.capitalize()} on {TRIANGULAR_BASE_INVESTMENT} {self.base_currency.capitalize()} volume)"
                             # If we can relate currency_b to base currency, estimate the value
                             elif self.base_currency in self.markets[currency_b]:
                                 price_b_in_base = self.markets[currency_b][self.base_currency]['min_price']
-                                potential_value = 100 * price_b_in_base * spread_width
-                                base_value_str = f" (Historical spread: ~{potential_value:.2f} {self.base_currency.capitalize()} on 100 {currency_b} volume)"
+                                potential_value = TRIANGULAR_BASE_INVESTMENT * price_b_in_base * spread_width
+                                base_value_str = f" (Historical spread: ~{potential_value:.2f} {self.base_currency.capitalize()} on {TRIANGULAR_BASE_INVESTMENT} {currency_b} volume)"
                         except (KeyError, ZeroDivisionError):
                             pass # Can't calculate base value, so we skip it.
 
@@ -215,17 +256,9 @@ class MarketAnalyzer:
                         if hide_zero_volume and base_volume == 0 and divine_volume == 0:
                             continue
 
-                        # Calculate percentiles for both currencies
-                        base_percentile = 0
-                        divine_percentile = 0
-
-                        if self.market_base_volumes and base_volume > 0:
-                            percentile_rank = bisect_left(self.market_base_volumes, base_volume)
-                            base_percentile = (percentile_rank / len(self.market_base_volumes)) * 100
-
-                        if self.market_divine_volumes and divine_volume > 0:
-                            percentile_rank = bisect_left(self.market_divine_volumes, divine_volume)
-                            divine_percentile = (percentile_rank / len(self.market_divine_volumes)) * 100
+                        # Calculate percentiles for both currencies using helper method
+                        base_percentile = self._get_volume_percentile(base_volume, self.market_base_volumes)
+                        divine_percentile = self._get_volume_percentile(divine_volume, self.market_divine_volumes)
 
                         # Use the higher percentile as the overall liquidity indicator
                         volume_percentile = max(base_percentile, divine_percentile)
@@ -310,39 +343,26 @@ class MarketAnalyzer:
                     if hide_zero_volume and not (has_volume_ab and has_volume_bc and has_volume_ca):
                         continue
 
-                    # Calculate percentiles for each leg using the higher volume/percentile
-                    percentile_ab = 0
-                    percentile_bc = 0
-                    percentile_ca = 0
+                    # Calculate percentiles for each leg using helper method
+                    base_p_ab = self._get_volume_percentile(base_volume_ab, self.market_base_volumes)
+                    divine_p_ab = self._get_volume_percentile(divine_volume_ab, self.market_divine_volumes)
+                    percentile_ab = max(base_p_ab, divine_p_ab)
 
-                    if self.market_base_volumes and base_volume_ab > 0:
-                        base_p = (bisect_left(self.market_base_volumes, base_volume_ab) / len(self.market_base_volumes)) * 100
-                        percentile_ab = max(percentile_ab, base_p)
-                    if self.market_divine_volumes and divine_volume_ab > 0:
-                        divine_p = (bisect_left(self.market_divine_volumes, divine_volume_ab) / len(self.market_divine_volumes)) * 100
-                        percentile_ab = max(percentile_ab, divine_p)
+                    base_p_bc = self._get_volume_percentile(base_volume_bc, self.market_base_volumes)
+                    divine_p_bc = self._get_volume_percentile(divine_volume_bc, self.market_divine_volumes)
+                    percentile_bc = max(base_p_bc, divine_p_bc)
 
-                    if self.market_base_volumes and base_volume_bc > 0:
-                        base_p = (bisect_left(self.market_base_volumes, base_volume_bc) / len(self.market_base_volumes)) * 100
-                        percentile_bc = max(percentile_bc, base_p)
-                    if self.market_divine_volumes and divine_volume_bc > 0:
-                        divine_p = (bisect_left(self.market_divine_volumes, divine_volume_bc) / len(self.market_divine_volumes)) * 100
-                        percentile_bc = max(percentile_bc, divine_p)
-
-                    if self.market_base_volumes and base_volume_ca > 0:
-                        base_p = (bisect_left(self.market_base_volumes, base_volume_ca) / len(self.market_base_volumes)) * 100
-                        percentile_ca = max(percentile_ca, base_p)
-                    if self.market_divine_volumes and divine_volume_ca > 0:
-                        divine_p = (bisect_left(self.market_divine_volumes, divine_volume_ca) / len(self.market_divine_volumes)) * 100
-                        percentile_ca = max(percentile_ca, divine_p)
+                    base_p_ca = self._get_volume_percentile(base_volume_ca, self.market_base_volumes)
+                    divine_p_ca = self._get_volume_percentile(divine_volume_ca, self.market_divine_volumes)
+                    percentile_ca = max(base_p_ca, divine_p_ca)
 
                     min_percentile = min(percentile_ab, percentile_bc, percentile_ca)
 
                     # Calculate historical inefficiency value in base currency if possible
                     base_value_str = ""
                     if curr_a == self.base_currency:
-                        historical_value = 100 * inefficiency_ratio
-                        base_value_str = f" (Historical inefficiency: {historical_value:.2f} {self.base_currency.capitalize()} per 100 invested)"
+                        historical_value = TRIANGULAR_BASE_INVESTMENT * inefficiency_ratio
+                        base_value_str = f" (Historical inefficiency: {historical_value:.2f} {self.base_currency.capitalize()} per {TRIANGULAR_BASE_INVESTMENT} invested)"
 
                     steps_str = f"Historical Rates: {self._format_number(price_ab)}, {self._format_number(price_bc)}, {self._format_number(price_ca)}"
                     opportunities.append({
