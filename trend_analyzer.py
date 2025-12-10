@@ -30,9 +30,9 @@ class TrendAnalyzer:
         self.hourly_data = hourly_data_list
         self.hours_analyzed = len(hourly_data_list)
 
-        # Create MarketAnalyzer for each hour
+        # Create MarketAnalyzer for each hour (quiet mode to suppress individual prints)
         self.analyzers = [
-            MarketAnalyzer(data, league=league, realm=realm)
+            MarketAnalyzer(data, league=league, realm=realm, quiet=True)
             for data in hourly_data_list
         ]
 
@@ -108,7 +108,7 @@ class TrendAnalyzer:
                         self.market_history[market_id]['base_volumes'].append(base_volume)
                         self.market_history[market_id]['divine_volumes'].append(divine_volume)
 
-    def get_persistent_spread_markets(self, min_spread=0.02, persistence_threshold=0.5, min_avg_volume=0, top_n=10):
+    def get_persistent_spread_markets(self, min_spread=0.2, persistence_threshold=0.5, min_avg_volume=0, top_n=10):
         """
         Identify markets with consistently wide spreads across multiple hours.
 
@@ -299,7 +299,7 @@ class TrendAnalyzer:
             'spread_data': spread_data
         }
 
-    def display_persistent_markets(self, min_spread=0.02, persistence_threshold=0.5, min_avg_volume=100, top_n=10):
+    def display_persistent_markets(self, min_spread=0.2, persistence_threshold=0.5, min_avg_volume=100, top_n=10):
         """
         Display markets with persistent high spreads in a formatted way.
 

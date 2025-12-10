@@ -19,10 +19,11 @@ class MarketAnalyzer:
         
         return formatted_num
 
-    def __init__(self, market_data, league, realm=None, debug=False):
+    def __init__(self, market_data, league, realm=None, debug=False, quiet=False):
         self.league = league
         self.realm = realm
         self.debug = debug
+        self.quiet = quiet
         # Determine base currency: PoE2 uses exalted, PoE1 uses chaos
         self.base_currency = 'exalted' if realm == 'poe2' else 'chaos'
         self.base_currency_display = self.base_currency.capitalize()  # For UI consistency
@@ -43,15 +44,17 @@ class MarketAnalyzer:
             min_price = self.markets['divine'][self.base_currency]['min_price']
             max_price = self.markets['divine'][self.base_currency]['max_price']
             self.divine_to_base_ratio = (min_price + max_price) / 2
-            base_name = self.base_currency.title()
-            print(f"Using Divine to {base_name} ratio: 1 Divine ≈ "
-                  f"{self.divine_to_base_ratio:.0f} {base_name}")
+            if not self.quiet:
+                base_name = self.base_currency.title()
+                print(f"Using Divine to {base_name} ratio: 1 Divine ≈ "
+                      f"{self.divine_to_base_ratio:.0f} {base_name}")
         else:
             # Fallback: typical Divine ratios
             self.divine_to_base_ratio = DEFAULT_DIVINE_CHAOS_RATIO if self.base_currency == 'chaos' else DEFAULT_DIVINE_EXALTED_RATIO
-            base_name = self.base_currency.title()
-            print(f"Using Divine to {base_name} ratio (fallback): 1 Divine ≈ "
-                  f"{self.divine_to_base_ratio:.0f} {base_name}")
+            if not self.quiet:
+                base_name = self.base_currency.title()
+                print(f"Using Divine to {base_name} ratio (fallback): 1 Divine ≈ "
+                      f"{self.divine_to_base_ratio:.0f} {base_name}")
 
     def _get_volume_percentile(self, volume, volume_list):
         """
