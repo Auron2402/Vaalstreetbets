@@ -4,16 +4,16 @@ import json
 import os
 
 # --- Configuration ---
-from config import USER_AGENT
+from config import USER_AGENT, CACHE_DIR
 
 # Set Definitions
 BASE_API_URL = "https://api.pathofexile.com"
 
 
 class TradeAPIClient:
-    def __init__(self, token_file="token.json", cache_dir="data_exports"):
+    def __init__(self, token_file="token.json", cache_dir=None):
         self.token_file = token_file
-        self.cache_dir = cache_dir
+        self.cache_dir = cache_dir if cache_dir is not None else CACHE_DIR
         self.access_token = self._load_token()
 
         # Create cache directory if it doesn't exist

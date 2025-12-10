@@ -6,6 +6,12 @@ Analyzes patterns across multiple hours to identify persistent volatility.
 import statistics
 from collections import defaultdict
 from arbitrage import MarketAnalyzer
+from config import (
+    DEFAULT_DIVINE_CHAOS_RATIO,
+    DEFAULT_DIVINE_EXALTED_RATIO,
+    VOLUME_TREND_UP_MULTIPLIER,
+    VOLUME_TREND_DOWN_MULTIPLIER
+)
 
 
 class TrendAnalyzer:
@@ -69,8 +75,8 @@ class TrendAnalyzer:
         if divine_base_ratios:
             self.divine_to_base_ratio = statistics.median(divine_base_ratios)
         else:
-            # Fallback: typical Divine ratios (250 for Chaos, 30 for Exalted)
-            self.divine_to_base_ratio = 250 if self.base_currency == 'chaos' else 30
+            # Fallback: use configured Divine ratios
+            self.divine_to_base_ratio = DEFAULT_DIVINE_CHAOS_RATIO if self.base_currency == 'chaos' else DEFAULT_DIVINE_EXALTED_RATIO
 
         base_name = self.base_currency.title()
         print(f"Using Divine to {base_name} ratio: 1 Divine ≈ "
@@ -524,9 +530,9 @@ class TrendAnalyzer:
             if opp['current_base_volume'] > 0 or opp['avg_base_volume'] > 0:
                 base_trend = ""
                 if opp['avg_base_volume'] > 0 and opp['current_base_volume'] > 0:
-                    if opp['current_base_volume'] > opp['avg_base_volume'] * 1.1:
+                    if opp['current_base_volume'] > opp['avg_base_volume'] * VOLUME_TREND_UP_MULTIPLIER:
                         base_trend = " ↑"
-                    elif opp['current_base_volume'] < opp['avg_base_volume'] * 0.9:
+                    elif opp['current_base_volume'] < opp['avg_base_volume'] * VOLUME_TREND_DOWN_MULTIPLIER:
                         base_trend = " ↓"
 
                 # Calculate percentile for current volume
@@ -542,9 +548,9 @@ class TrendAnalyzer:
             if opp['current_divine_volume'] > 0 or opp['avg_divine_volume'] > 0:
                 divine_trend = ""
                 if opp['avg_divine_volume'] > 0 and opp['current_divine_volume'] > 0:
-                    if opp['current_divine_volume'] > opp['avg_divine_volume'] * 1.1:
+                    if opp['current_divine_volume'] > opp['avg_divine_volume'] * VOLUME_TREND_UP_MULTIPLIER:
                         divine_trend = " ↑"
-                    elif opp['current_divine_volume'] < opp['avg_divine_volume'] * 0.9:
+                    elif opp['current_divine_volume'] < opp['avg_divine_volume'] * VOLUME_TREND_DOWN_MULTIPLIER:
                         divine_trend = " ↓"
 
                 # Calculate percentile for current volume

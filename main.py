@@ -1,19 +1,18 @@
 from api_client import TradeAPIClient
 from arbitrage import MarketAnalyzer
 from trend_analyzer import TrendAnalyzer
+import config
 import json
 import time
 
-# Configuration
-hours_back = 1  # Change this to fetch data from previous hours
-league = "Standard" # Set current league
-testing = False
-poe_version = 2 # 1 = poe1, 2 = poe2 (duh)
-
-# Trend Analysis Configuration
-enable_trend_analysis = True  # Set to True to analyze multiple hours
-trend_hours = 24  # Number of hours to analyze for trends (max 24 recommended)
-
+# Load configuration from config.py
+# You can override these values here if needed for testing
+hours_back = config.HOURS_BACK
+league = config.LEAGUE
+testing = config.TESTING
+poe_version = config.POE_VERSION
+enable_trend_analysis = config.ENABLE_TREND_ANALYSIS
+trend_hours = config.TREND_HOURS
 
 def main():
     """
@@ -63,9 +62,16 @@ def main():
         try:
             # Analyze current hour
             current_analyzer = MarketAnalyzer(current_markets, league=league, realm=realm)
-            current_analyzer.display_market_stats(top_n=5)
-            current_analyzer.get_top_spread_opportunities(top_n=10)
-            current_analyzer.get_top_triangular_inefficiencies(top_n=10)
+            current_analyzer.display_market_stats(top_n=config.SINGLE_HOUR_TOP_N)
+            current_analyzer.get_top_spread_opportunities(
+                top_n=config.SINGLE_HOUR_TOP_N,
+                hide_zero_volume=config.SINGLE_HOUR_HIDE_ZERO_VOLUME
+            )
+            current_analyzer.get_top_triangular_inefficiencies(
+                top_n=config.SINGLE_HOUR_TOP_N,
+                hide_zero_volume=config.SINGLE_HOUR_HIDE_ZERO_VOLUME,
+                min_percentile=config.SINGLE_HOUR_TRIANGULAR_MIN_PERCENTILE
+            )
 
         except Exception as e:
             print(f"Error analyzing current market data: {e}")
@@ -106,23 +112,23 @@ def main():
 
                 # Display persistent markets
                 trend_analyzer.display_persistent_markets(
-                    min_spread=0.02,  # 2% minimum spread
-                    persistence_threshold=0.5,  # Must appear in 50% of hours
-                    min_avg_volume=1000,  # Minimum 1000 base currency equivalent volume
-                    top_n=10
+                    min_spread=config.PERSISTENT_MIN_SPREAD,
+                    persistence_threshold=config.PERSISTENT_PERSISTENCE_THRESHOLD,
+                    min_avg_volume=config.PERSISTENT_MIN_AVG_VOLUME,
+                    top_n=config.PERSISTENT_TOP_N
                 )
 
                 # Display trending markets (widening spreads)
                 trend_analyzer.display_trending_markets(
-                    lookback_hours=min(6, len(hourly_data_list)),
-                    min_avg_volume=1000,  # Minimum 1000 base currency equivalent volume
-                    top_n=10
+                    lookback_hours=min(config.TRENDING_LOOKBACK_HOURS, len(hourly_data_list)),
+                    min_avg_volume=config.TRENDING_MIN_AVG_VOLUME,
+                    top_n=config.TRENDING_TOP_N
                 )
 
                 # Compare current hour with historical average
                 trend_analyzer.display_current_vs_historical(
                     current_analyzer,
-                    top_n=10
+                    top_n=config.CURRENT_VS_HISTORICAL_TOP_N
                 )
 
             else:

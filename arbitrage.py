@@ -1,12 +1,12 @@
 import itertools
 import statistics
 from bisect import bisect_left
-
-# Configuration constants
-MIN_SPREAD_THRESHOLD = 0.001  # Minimum spread to avoid floating point noise
-TRIANGULAR_BASE_INVESTMENT = 100  # Base amount for triangular inefficiency calculations
-DEFAULT_DIVINE_CHAOS_RATIO = 250  # Fallback Divine to Chaos ratio for PoE1
-DEFAULT_DIVINE_EXALTED_RATIO = 30  # Fallback Divine to Exalted ratio for PoE2
+from config import (
+    MIN_SPREAD_THRESHOLD,
+    TRIANGULAR_BASE_INVESTMENT,
+    DEFAULT_DIVINE_CHAOS_RATIO,
+    DEFAULT_DIVINE_EXALTED_RATIO
+)
 
 class MarketAnalyzer:
     def _format_number(self, num, precision=8, use_comma=False):
