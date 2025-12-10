@@ -323,6 +323,9 @@ class TrendAnalyzer:
             print(f"\nNo markets found meeting criteria.")
             return
 
+        # Get the most recent analyzer for percentile calculations
+        latest_analyzer = self.analyzers[-1]
+
         for i, market in enumerate(markets, 1):
             currencies = market['market_id'].split('|')
             print(f"\n{i}. {currencies[0].upper()} <-> {currencies[1].upper()}")
@@ -340,7 +343,11 @@ class TrendAnalyzer:
                 print(f"      {base_name} Total ({self.hours_analyzed}h): {market['total_base_volume']:,.0f}")
                 if market['latest_base_volume'] > 0:
                     base_trend = "↑" if market['latest_base_volume'] > market['avg_base_volume'] else "↓"
-                    print(f"      {base_name} Latest: {market['latest_base_volume']:,.0f} {base_trend}")
+                    base_percentile = latest_analyzer._get_volume_percentile(
+                        market['latest_base_volume'],
+                        latest_analyzer.market_base_volumes
+                    )
+                    print(f"      {base_name} Latest: {market['latest_base_volume']:,.0f} ({base_percentile:.0f}th percentile) {base_trend}")
 
             # Display Divine volume if present
             if market['avg_divine_volume'] > 0:
@@ -348,7 +355,11 @@ class TrendAnalyzer:
                 print(f"      Divine Total ({self.hours_analyzed}h): {market['total_divine_volume']:,.0f}")
                 if market['latest_divine_volume'] > 0:
                     divine_trend = "↑" if market['latest_divine_volume'] > market['avg_divine_volume'] else "↓"
-                    print(f"      Divine Latest: {market['latest_divine_volume']:,.0f} {divine_trend}")
+                    divine_percentile = latest_analyzer._get_volume_percentile(
+                        market['latest_divine_volume'],
+                        latest_analyzer.market_divine_volumes
+                    )
+                    print(f"      Divine Latest: {market['latest_divine_volume']:,.0f} ({divine_percentile:.0f}th percentile) {divine_trend}")
 
             print(f"      Consistency: {market['hours_with_volume']}/{market['total_hours']} hours ({market['volume_consistency']:.1%})")
 
@@ -375,6 +386,9 @@ class TrendAnalyzer:
             print(f"\nNo trending markets found meeting criteria.")
             return
 
+        # Get the most recent analyzer for percentile calculations
+        latest_analyzer = self.analyzers[-1]
+
         for i, market in enumerate(markets, 1):
             currencies = market['market_id'].split('|')
             print(f"\n{i}. {currencies[0].upper()} <-> {currencies[1].upper()}")
@@ -383,12 +397,26 @@ class TrendAnalyzer:
             print(f"   Average (last {market['hours_analyzed']}h): {market['avg_recent_spread']:.2%}")
             print(f"   Change: {market['spread_change']:+.2%}")
 
-            # Display volume for both currencies
+            # Display volume for both currencies with percentiles
             volume_parts = []
             if market['avg_base_volume'] > 0:
-                volume_parts.append(f"{base_name}: {market['avg_base_volume']:,.0f}/hour (latest: {market['latest_base_volume']:,.0f})")
+                latest_base = market['latest_base_volume']
+                base_percentile = latest_analyzer._get_volume_percentile(
+                    latest_base,
+                    latest_analyzer.market_base_volumes
+                )
+                volume_parts.append(
+                    f"{base_name}: {market['avg_base_volume']:,.0f}/hour (latest: {latest_base:,.0f}, {base_percentile:.0f}th percentile)"
+                )
             if market['avg_divine_volume'] > 0:
-                volume_parts.append(f"Divine: {market['avg_divine_volume']:,.0f}/hour (latest: {market['latest_divine_volume']:,.0f})")
+                latest_divine = market['latest_divine_volume']
+                divine_percentile = latest_analyzer._get_volume_percentile(
+                    latest_divine,
+                    latest_analyzer.market_divine_volumes
+                )
+                volume_parts.append(
+                    f"Divine: {market['avg_divine_volume']:,.0f}/hour (latest: {latest_divine:,.0f}, {divine_percentile:.0f}th percentile)"
+                )
 
             if volume_parts:
                 print(f"   Volume: {' | '.join(volume_parts)}")
@@ -491,7 +519,7 @@ class TrendAnalyzer:
             else:
                 print(f"   Status: ✓ Normal (within historical range)")
 
-            # Display volume information with comparison
+            # Display volume information with comparison and percentiles
             volume_parts = []
             if opp['current_base_volume'] > 0 or opp['avg_base_volume'] > 0:
                 base_trend = ""
@@ -500,9 +528,15 @@ class TrendAnalyzer:
                         base_trend = " ↑"
                     elif opp['current_base_volume'] < opp['avg_base_volume'] * 0.9:
                         base_trend = " ↓"
+
+                # Calculate percentile for current volume
+                base_percentile = current_analyzer._get_volume_percentile(
+                    opp['current_base_volume'],
+                    current_analyzer.market_base_volumes
+                )
                 volume_parts.append(
                     f"{self.base_currency_display}: {opp['current_base_volume']:,.0f} "
-                    f"(avg: {opp['avg_base_volume']:,.0f}){base_trend}"
+                    f"(avg: {opp['avg_base_volume']:,.0f}, {base_percentile:.0f}th percentile){base_trend}"
                 )
 
             if opp['current_divine_volume'] > 0 or opp['avg_divine_volume'] > 0:
@@ -512,9 +546,15 @@ class TrendAnalyzer:
                         divine_trend = " ↑"
                     elif opp['current_divine_volume'] < opp['avg_divine_volume'] * 0.9:
                         divine_trend = " ↓"
+
+                # Calculate percentile for current volume
+                divine_percentile = current_analyzer._get_volume_percentile(
+                    opp['current_divine_volume'],
+                    current_analyzer.market_divine_volumes
+                )
                 volume_parts.append(
                     f"Divine: {opp['current_divine_volume']:,.0f} "
-                    f"(avg: {opp['avg_divine_volume']:,.0f}){divine_trend}"
+                    f"(avg: {opp['avg_divine_volume']:,.0f}, {divine_percentile:.0f}th percentile){divine_trend}"
                 )
 
             if volume_parts:

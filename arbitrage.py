@@ -290,15 +290,24 @@ class MarketAnalyzer:
                     volume_parts.append(f"{divine_vol:,} Divine")
                 print(f"   Volume: {' | '.join(volume_parts)}")
 
-    def get_top_triangular_inefficiencies(self, top_n=10, hide_zero_volume=True):
+    def get_top_triangular_inefficiencies(self, top_n=10, hide_zero_volume=True, min_percentile=10):
         """
         Identifies triangular trading paths with historical price inefficiencies.
         These patterns (A -> B -> C -> A) show where historical prices suggested
         market inefficiencies. This is historical analysis, not executable arbitrage.
+
+        Args:
+            top_n: Number of top opportunities to display
+            hide_zero_volume: Skip paths where any leg has zero volume
+            min_percentile: Minimum volume percentile for any leg (default 10th percentile)
         """
         print(f"\n{'='*80}")
         print("TRIANGULAR MARKET INEFFICIENCY ANALYSIS (Single Hour)")
         print("Paths where historical prices suggested trading opportunities")
+        print("NOTE: Uses best historical prices (min prices). These are NOT executable.")
+        print("      Extreme values indicate volatility or data issues, not real arbitrage.")
+        if min_percentile > 0:
+            print(f"Filtering: All legs must have >{min_percentile}th percentile volume")
         print(f"{'='*80}")
         opportunities = []
         currencies = list(self.markets.keys())
@@ -359,7 +368,11 @@ class MarketAnalyzer:
                     divine_p_ca = self._get_volume_percentile(divine_volume_ca, self.market_divine_volumes)
                     percentile_ca = max(base_p_ca, divine_p_ca)
 
-                    min_percentile = min(percentile_ab, percentile_bc, percentile_ca)
+                    lowest_leg_percentile = min(percentile_ab, percentile_bc, percentile_ca)
+
+                    # Filter out paths where the minimum leg percentile is too low (illiquid)
+                    if lowest_leg_percentile < min_percentile:
+                        continue
 
                     # Calculate historical inefficiency value in base currency if possible
                     base_value_str = ""
@@ -368,12 +381,19 @@ class MarketAnalyzer:
                         base_value_str = f" (Historical inefficiency: {historical_value:.2f} {self.base_currency.capitalize()} per {TRIANGULAR_BASE_INVESTMENT} invested)"
 
                     steps_str = f"Historical Rates: {self._format_number(price_ab)}, {self._format_number(price_bc)}, {self._format_number(price_ca)}"
+
+                    # Calculate total volumes across all legs (take max for each currency)
+                    total_base_vol = max(base_volume_ab, base_volume_bc, base_volume_ca)
+                    total_divine_vol = max(divine_volume_ab, divine_volume_bc, divine_volume_ca)
+
                     opportunities.append({
                         'inefficiency': inefficiency_ratio,
                         'path': f"{curr_a} -> {curr_b} -> {curr_c} -> {curr_a}",
                         'base_value': base_value_str,
                         'steps': steps_str,
-                        'volume_percentile': min_percentile
+                        'volume_percentile': lowest_leg_percentile,
+                        'base_volume': total_base_vol,
+                        'divine_volume': total_divine_vol
                     })
 
             except KeyError:
@@ -394,6 +414,15 @@ class MarketAnalyzer:
                 print(f"   {opp['base_value'].strip()}")
             print(f"   {opp['steps']}")
             print(f"   Min Liquidity: {opp['volume_percentile']:.0f}th percentile")
+
+            # Display actual volumes
+            if opp['base_volume'] > 0 or opp['divine_volume'] > 0:
+                volume_parts = []
+                if opp['base_volume'] > 0:
+                    volume_parts.append(f"{opp['base_volume']:,} {self.base_currency.capitalize()}")
+                if opp['divine_volume'] > 0:
+                    volume_parts.append(f"{opp['divine_volume']:,} Divine")
+                print(f"   Max Volume per Leg: {' | '.join(volume_parts)}")
 
     def display_market_stats(self, top_n=5):
         """
