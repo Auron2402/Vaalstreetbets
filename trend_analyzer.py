@@ -424,6 +424,14 @@ class TrendAnalyzer:
                     historical_summary = self.get_market_summary(market_id)
 
                     if historical_summary and current_spread > 0.001:
+                        # Get current volumes
+                        current_base_vol = prices.get('volume', {}).get(self.base_currency, 0)
+                        current_divine_vol = prices.get('volume', {}).get('divine', 0)
+
+                        # Calculate volume comparison
+                        hist_avg_base = historical_summary['avg_base_volume']
+                        hist_avg_divine = historical_summary['avg_divine_volume']
+
                         opportunities_with_context.append({
                             'market_id': market_id,
                             'current_spread': current_spread,
@@ -432,7 +440,11 @@ class TrendAnalyzer:
                             'historical_median': historical_summary['median_spread'],
                             'hours_tracked': historical_summary['hours_tracked'],
                             'vs_avg': current_spread - historical_summary['avg_spread'],
-                            'percentile': self._calculate_percentile(current_spread, historical_summary['spread_data'])
+                            'percentile': self._calculate_percentile(current_spread, historical_summary['spread_data']),
+                            'current_base_volume': current_base_vol,
+                            'current_divine_volume': current_divine_vol,
+                            'avg_base_volume': hist_avg_base,
+                            'avg_divine_volume': hist_avg_divine
                         })
 
         # Sort by how much current spread exceeds historical average
@@ -478,3 +490,32 @@ class TrendAnalyzer:
                 print(f"   Status: ⚠️  ABOVE AVERAGE by {opp['vs_avg']:.2%} (unusual volatility)")
             else:
                 print(f"   Status: ✓ Normal (within historical range)")
+
+            # Display volume information with comparison
+            volume_parts = []
+            if opp['current_base_volume'] > 0 or opp['avg_base_volume'] > 0:
+                base_trend = ""
+                if opp['avg_base_volume'] > 0 and opp['current_base_volume'] > 0:
+                    if opp['current_base_volume'] > opp['avg_base_volume'] * 1.1:
+                        base_trend = " ↑"
+                    elif opp['current_base_volume'] < opp['avg_base_volume'] * 0.9:
+                        base_trend = " ↓"
+                volume_parts.append(
+                    f"{self.base_currency_display}: {opp['current_base_volume']:,.0f} "
+                    f"(avg: {opp['avg_base_volume']:,.0f}){base_trend}"
+                )
+
+            if opp['current_divine_volume'] > 0 or opp['avg_divine_volume'] > 0:
+                divine_trend = ""
+                if opp['avg_divine_volume'] > 0 and opp['current_divine_volume'] > 0:
+                    if opp['current_divine_volume'] > opp['avg_divine_volume'] * 1.1:
+                        divine_trend = " ↑"
+                    elif opp['current_divine_volume'] < opp['avg_divine_volume'] * 0.9:
+                        divine_trend = " ↓"
+                volume_parts.append(
+                    f"Divine: {opp['current_divine_volume']:,.0f} "
+                    f"(avg: {opp['avg_divine_volume']:,.0f}){divine_trend}"
+                )
+
+            if volume_parts:
+                print(f"   Volume: {' | '.join(volume_parts)}")
