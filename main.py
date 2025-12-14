@@ -1,6 +1,7 @@
 from api_client import TradeAPIClient
 from arbitrage import MarketAnalyzer
 from trend_analyzer import TrendAnalyzer
+from discord_notifier import DiscordNotifier
 import config
 import json
 import time
@@ -13,6 +14,9 @@ testing = config.TESTING
 poe_version = config.POE_VERSION
 enable_trend_analysis = config.ENABLE_TREND_ANALYSIS
 trend_hours = config.TREND_HOURS
+
+# Initialize Discord notifier
+discord = DiscordNotifier()
 
 def main():
     """
@@ -63,15 +67,26 @@ def main():
             # Analyze current hour
             current_analyzer = MarketAnalyzer(current_markets, league=league, realm=realm)
             current_analyzer.display_market_stats(top_n=config.SINGLE_HOUR_TOP_N)
-            current_analyzer.get_top_spread_opportunities(
+
+            # Get spread opportunities
+            spread_opps = current_analyzer.get_top_spread_opportunities(
                 top_n=config.SINGLE_HOUR_TOP_N,
                 hide_zero_volume=config.SINGLE_HOUR_HIDE_ZERO_VOLUME
             )
-            current_analyzer.get_top_triangular_inefficiencies(
+
+            # Get triangular trades
+            triangular_opps = current_analyzer.get_top_triangular_inefficiencies(
                 top_n=config.SINGLE_HOUR_TOP_N,
                 hide_zero_volume=config.SINGLE_HOUR_HIDE_ZERO_VOLUME,
                 min_percentile=config.SINGLE_HOUR_TRIANGULAR_MIN_PERCENTILE
             )
+
+            # Send Discord notifications for single-hour analysis
+            if config.DISCORD_SEND_SPREAD_OPPORTUNITIES and spread_opps:
+                discord.send_spread_opportunities(spread_opps, league, current_analyzer.base_currency, top_n=config.SINGLE_HOUR_TOP_N)
+
+            if config.DISCORD_SEND_TRIANGULAR_TRADES and triangular_opps:
+                discord.send_triangular_trades(triangular_opps, league, current_analyzer.base_currency, top_n=config.SINGLE_HOUR_TOP_N)
 
         except Exception as e:
             print(f"Error analyzing current market data: {e}")
@@ -110,12 +125,27 @@ def main():
                 # Create trend analyzer
                 trend_analyzer = TrendAnalyzer(hourly_data_list, league=league, realm=realm)
 
+                # Get persistent markets
+                persistent_markets = trend_analyzer.get_persistent_spread_markets(
+                    min_spread=config.PERSISTENT_MIN_SPREAD,
+                    persistence_threshold=config.PERSISTENT_PERSISTENCE_THRESHOLD,
+                    min_avg_volume=config.PERSISTENT_MIN_AVG_VOLUME,
+                    top_n=config.PERSISTENT_TOP_N
+                )
+
                 # Display persistent markets
                 trend_analyzer.display_persistent_markets(
                     min_spread=config.PERSISTENT_MIN_SPREAD,
                     persistence_threshold=config.PERSISTENT_PERSISTENCE_THRESHOLD,
                     min_avg_volume=config.PERSISTENT_MIN_AVG_VOLUME,
                     top_n=config.PERSISTENT_TOP_N
+                )
+
+                # Get trending markets
+                trending_markets = trend_analyzer.get_trending_markets(
+                    lookback_hours=min(config.TRENDING_LOOKBACK_HOURS, len(hourly_data_list)),
+                    min_avg_volume=config.TRENDING_MIN_AVG_VOLUME,
+                    top_n=config.TRENDING_TOP_N
                 )
 
                 # Display trending markets (widening spreads)
@@ -130,6 +160,13 @@ def main():
                     current_analyzer,
                     top_n=config.CURRENT_VS_HISTORICAL_TOP_N
                 )
+
+                # Send Discord notifications for trend analysis
+                if config.DISCORD_SEND_PERSISTENT_MARKETS and persistent_markets:
+                    discord.send_persistent_markets(persistent_markets, league, trend_analyzer.base_currency, trend_hours, top_n=config.PERSISTENT_TOP_N)
+
+                if config.DISCORD_SEND_TRENDING_MARKETS and trending_markets:
+                    discord.send_trending_markets(trending_markets, league, trend_analyzer.base_currency, config.TRENDING_LOOKBACK_HOURS, top_n=config.TRENDING_TOP_N)
 
             else:
                 print(f"\nInsufficient data for trend analysis (need at least 2 hours, got {len(hourly_data_list)})")

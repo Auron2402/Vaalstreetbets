@@ -272,7 +272,20 @@ class MarketAnalyzer:
 
         if not opportunities:
             print("\nNo markets found with spreads meeting criteria.")
-            return
+            return []
+
+        # Convert to dict format for easier access
+        formatted_opportunities = []
+        for i, (spread, pair, min_price, max_price, base_value, percentile, base_vol, divine_vol) in enumerate(opportunities[:top_n]):
+            formatted_opportunities.append({
+                'pair': pair,
+                'spread': spread,
+                'min_price': min_price,
+                'max_price': max_price,
+                'percentile': percentile,
+                'base_volume': base_vol,
+                'divine_volume': divine_vol
+            })
 
         for i, (spread, pair, min_price, max_price, base_value, percentile, base_vol, divine_vol) in enumerate(opportunities[:top_n]):
             currencies = pair.split(' <-> ')
@@ -289,6 +302,8 @@ class MarketAnalyzer:
                 if divine_vol > 0:
                     volume_parts.append(f"{divine_vol:,} Divine")
                 print(f"   Volume: {' | '.join(volume_parts)}")
+
+        return formatted_opportunities
 
     def get_top_triangular_inefficiencies(self, top_n=10, hide_zero_volume=True, min_percentile=10):
         """
@@ -393,7 +408,18 @@ class MarketAnalyzer:
                         'steps': steps_str,
                         'volume_percentile': lowest_leg_percentile,
                         'base_volume': total_base_vol,
-                        'divine_volume': total_divine_vol
+                        'divine_volume': total_divine_vol,
+                        # Store individual step data for detailed display
+                        'curr_a': curr_a,
+                        'curr_b': curr_b,
+                        'curr_c': curr_c,
+                        'amount_a_start': TRIANGULAR_BASE_INVESTMENT,
+                        'amount_b': TRIANGULAR_BASE_INVESTMENT * price_ab,
+                        'amount_c': TRIANGULAR_BASE_INVESTMENT * price_ab * price_bc,
+                        'amount_a_end': TRIANGULAR_BASE_INVESTMENT * final_amount_a,
+                        'price_ab': price_ab,
+                        'price_bc': price_bc,
+                        'price_ca': price_ca
                     })
 
             except KeyError:
@@ -405,14 +431,30 @@ class MarketAnalyzer:
 
         if not opportunities:
             print("\nNo triangular paths found meeting criteria.")
-            return
+            return []
 
-        for i, opp in enumerate(opportunities[:top_n]):
+        # Get top N for display and return
+        top_opportunities = opportunities[:top_n]
+
+        for i, opp in enumerate(top_opportunities):
             print(f"\n{i+1}. Path: {opp['path']}")
             print(f"   Inefficiency: {opp['inefficiency']:.2%}")
             if opp['base_value']:
                 print(f"   {opp['base_value'].strip()}")
-            print(f"   {opp['steps']}")
+
+            # Display step-by-step trade amounts
+            print(f"   Trade Steps (starting with {self._format_number(opp['amount_a_start'])} {opp['curr_a'].upper()}):")
+            print(f"      Step 1: {self._format_number(opp['amount_a_start'])} {opp['curr_a'].upper()} "
+                  f"→ {self._format_number(opp['amount_b'])} {opp['curr_b'].upper()} "
+                  f"(rate: {self._format_number(opp['price_ab'])})")
+            print(f"      Step 2: {self._format_number(opp['amount_b'])} {opp['curr_b'].upper()} "
+                  f"→ {self._format_number(opp['amount_c'])} {opp['curr_c'].upper()} "
+                  f"(rate: {self._format_number(opp['price_bc'])})")
+            print(f"      Step 3: {self._format_number(opp['amount_c'])} {opp['curr_c'].upper()} "
+                  f"→ {self._format_number(opp['amount_a_end'])} {opp['curr_a'].upper()} "
+                  f"(rate: {self._format_number(opp['price_ca'])})")
+            print(f"      Result: {self._format_number(opp['amount_a_end'] - opp['amount_a_start'])} {opp['curr_a'].upper()} profit")
+
             print(f"   Min Liquidity: {opp['volume_percentile']:.0f}th percentile")
 
             # Display actual volumes
@@ -423,6 +465,8 @@ class MarketAnalyzer:
                 if opp['divine_volume'] > 0:
                     volume_parts.append(f"{opp['divine_volume']:,} Divine")
                 print(f"   Max Volume per Leg: {' | '.join(volume_parts)}")
+
+        return top_opportunities
 
     def display_market_stats(self, top_n=5):
         """
